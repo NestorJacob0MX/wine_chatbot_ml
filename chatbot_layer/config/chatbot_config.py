@@ -20,3 +20,13 @@ class ChatbotConfig:
             5: "vinos suaves y aromáticos tipo Pinot Noir con frutos rojos",
         }
     )
+    cluster_hints_en: Dict[int, str] = field(
+        default_factory=lambda: {
+            0: "structured, full-bodied reds with fruit and spice notes",
+            1: "fresh, fruity wines with lively acidity",
+            2: "vibrant whites with citrus and fresh fruit notes",
+            3: "elegant Bordeaux-style red blends",
+            4: "expressive reds with red or dark fruit and defined tannins",
+            5: "smooth, aromatic Pinot Noir-style wines with red fruit",
+        }
+    )

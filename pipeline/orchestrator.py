@@ -121,6 +121,18 @@ class WineChatbotPipeline:
             raise RuntimeError("Primero debe ejecutarse run() para iniciar el chatbot.")
         return self._chatbot.reply(user_message)
 
+    def is_goodbye_message(self, user_message: str) -> bool:
+        """Indica si el mensaje debe terminar el bucle de conversación."""
+        if self._chatbot is None:
+            raise RuntimeError("Primero debe ejecutarse run() para iniciar el chatbot.")
+        return self._chatbot.is_goodbye_message(user_message)
+
+    def farewell_response(self, user_message: str = "") -> str:
+        """Retorna una despedida adecuada al idioma de la conversación."""
+        if self._chatbot is None:
+            raise RuntimeError("Primero debe ejecutarse run() para iniciar el chatbot.")
+        return self._chatbot.farewell_response(user_message)
+
     def reset_conversation(self) -> None:
         """Reinicia el historial y contexto conversacional actual."""
         if self._chatbot is None:
@@ -165,9 +177,10 @@ def main() -> None:
     while True:
         user_message = input("\nTú: ").strip()
         if not user_message:
+            print("SommelierAI: Cuéntame qué vas a cenar o qué tipo de vino prefieres.")
             continue
-        if user_message.lower() in {"salir", "exit", "quit"}:
-            print("SommelierAI: ¡Salud y provecho en tu cena!")
+        if pipeline.is_goodbye_message(user_message):
+            print(f"SommelierAI: {pipeline.farewell_response(user_message)}")
             break
         print(f"\nSommelierAI:\n{pipeline.reply(user_message)}")
 

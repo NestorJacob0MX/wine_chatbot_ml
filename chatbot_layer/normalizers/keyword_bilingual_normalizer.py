@@ -44,6 +44,9 @@ class KeywordBilingualNormalizer(QueryNormalizer):
         "fresco": "fresh crisp",
         "ligero": "light",
         "cuerpo": "body",
+        "robusto": "bold full-bodied",
+        "robusta": "bold full-bodied",
+        "con cuerpo": "full-bodied",
         "roble": "oak",
         "postre": "dessert",
     }
