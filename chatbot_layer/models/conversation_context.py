@@ -9,3 +9,5 @@ class ConversationContext:
     language: str = "es"
     last_dinner_query: Optional[str] = None
     max_price: Optional[float] = None
+    intent: Optional[str] = None
+    awaiting: Optional[str] = None

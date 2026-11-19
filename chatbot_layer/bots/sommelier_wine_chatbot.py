@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import datetime
 from typing import List, Optional
 
 from recommendation_layer import WineRecommendation, WineRecommender
@@ -33,7 +34,8 @@ class SommelierWineChatbot(WineChatbot):
         r"\b(hola|cena|cenar|comer|comida|pollo|carne|vino|tinto|blanco|"
         r"quiero|quisiera|recomienda|recomiendas|pescado|pasta|queso|"
         r"necesito|requiero|algo|robusto|robusta|ligero|ligera|mas|más|"
-        r"menos|presupuesto|gracias|por favor|adios|adiós|buenas noches|"
+        r"menos|presupuesto|pesos|peso|mxn|degustar|degustación|degustacion|"
+        r"catar|cata|probar|gracias|por favor|adios|adiós|buenas noches|"
         r"hasta luego|"
         r"hasta pronto|hasta mañana|nos vemos|me voy|salir|"
         r"voy|comer|con|para|pure|puré|papas|patatas)\b|[ñáéíóú¿¡]",
@@ -53,6 +55,31 @@ class SommelierWineChatbot(WineChatbot):
         r"bolder|lighter|softer|full bodied|bold|light|fruity|cheaper)\b",
         re.IGNORECASE,
     )
+    _MEAL_INTENT_MARKERS = re.compile(
+        r"\b(comida|comer|almuerzo|cena|cenar|desayuno|acompañar|acompanar|"
+        r"maridar|platillo|comida|meal|food|lunch|dinner|pair(?:ing)? with|"
+        r"eat|eating)\b",
+        re.IGNORECASE,
+    )
+    _TASTING_INTENT_MARKERS = re.compile(
+        r"\b(degustar|degustación|degustacion|catar|cata|probar|por sí solo|"
+        r"por si solo|solo|tasting|sip|on its own|by itself)\b",
+        re.IGNORECASE,
+    )
+    _MEAL_DETAIL_MARKERS = re.compile(
+        r"\b(ribeye|steak|beef|carne|res|pollo|chicken|pescado|fish|salmon|"
+        r"salmón|shrimp|camarones|mariscos|seafood|pasta|pizza|queso|cheese|"
+        r"cerdo|pork|cordero|lamb|ensalada|salad|arroz|rice|sushi|tacos|"
+        r"hamburguesa|burger|costillas|ribs|pavo|turkey|verduras|vegetables)\b",
+        re.IGNORECASE,
+    )
+    _TASTING_STYLE_MARKERS = re.compile(
+        r"\b(tinto|blanco|rosado|rosé|espumoso|champagne|dulce|seco|robusto|"
+        r"robusta|ligero|ligera|suave|frutal|cabernet|merlot|pinot|syrah|"
+        r"shiraz|chardonnay|sauvignon|riesling|red|white|rose|sparkling|"
+        r"sweet|dry|bold|full[- ]bodied|light|smooth|fruity)\b",
+        re.IGNORECASE,
+    )
     _NEGATIVE_ACKNOWLEDGMENTS = {
         "no",
         "no gracias",
@@ -67,10 +94,11 @@ class SommelierWineChatbot(WineChatbot):
     )
     _PRICE_PATTERNS = [
         re.compile(
-            r"(?:menos de|maximo|máximo|hasta|presupuesto de|under|max)\s*\$?\s*(\d+(?:\.\d+)?)",
+            r"(?:menos de|maximo|máximo|hasta|presupuesto(?: es)?(?: de)?|under|max)\s*\$?\s*(\d+(?:\.\d+)?)",
             re.IGNORECASE,
         ),
         re.compile(r"\$\s*(\d+(?:\.\d+)?)\s*(?:o menos|max|máximo)?", re.IGNORECASE),
+        re.compile(r"(\d+(?:\.\d+)?)\s*(?:pesos?|mxn)\b", re.IGNORECASE),
     ]
 
     def __init__(
@@ -158,6 +186,33 @@ class SommelierWineChatbot(WineChatbot):
         stripped = text.strip()
         return bool(self._GREETING_PATTERNS.match(stripped)) and len(stripped.split()) <= 4
 
+    def _daypart(self) -> str:
+        hour = datetime.now().astimezone().hour
+        return "dinner" if hour >= 18 or hour < 5 else "meal"
+
+    def _detect_intent(self, text: str) -> Optional[str]:
+        tasting_match = self._TASTING_INTENT_MARKERS.search(text)
+        meal_match = self._MEAL_INTENT_MARKERS.search(text)
+        if tasting_match and not meal_match:
+            return "tasting"
+        if meal_match and not tasting_match:
+            return "meal"
+        if tasting_match and meal_match:
+            return "tasting" if tasting_match.start() < meal_match.start() else "meal"
+        return None
+
+    def _has_meal_details(self, text: str) -> bool:
+        return bool(self._MEAL_DETAIL_MARKERS.search(text))
+
+    def _has_tasting_style(self, text: str) -> bool:
+        return bool(self._TASTING_STYLE_MARKERS.search(text))
+
+    def _display_price(self, price_usd: float, language: str) -> str:
+        if language == "es":
+            price_mxn = price_usd * 20
+            return f"MXN ${price_mxn:,.0f}"
+        return f"USD ${price_usd:,.2f}"
+
     def _format_greeting(self, lang: str) -> str:
         return self._dialogue.greeting(self._config.bot_name, lang)
 
@@ -192,9 +247,9 @@ class SommelierWineChatbot(WineChatbot):
                 )
             if rec.price > 0:
                 reason_parts.append(
-                    f"precio aprox. ${rec.price:.0f}"
+                    f"precio aprox. {self._display_price(rec.price, lang)}"
                     if lang == "es"
-                    else f"approx. ${rec.price:.0f}"
+                    else f"about {self._display_price(rec.price, lang)}"
                 )
 
             details = " · ".join(reason_parts)
@@ -238,12 +293,16 @@ class SommelierWineChatbot(WineChatbot):
 
         extracted_price = self._extract_max_price(clean_msg)
         if extracted_price is not None:
-            self._context.max_price = extracted_price
+            self._context.max_price = extracted_price / 20 if lang == "es" else extracted_price
 
         self._history.append(ChatTurn(role="user", message=clean_msg))
 
         if self._is_greeting_only(clean_msg):
-            response_text = self._format_greeting(lang)
+            greeting = self._format_greeting(lang)
+            self._context.awaiting = "intent"
+            response_text = (
+                f"{greeting}\n\n{self._dialogue.intent_question(lang)}"
+            )
             self._history.append(ChatTurn(role="assistant", message=response_text))
             return response_text
 
@@ -267,19 +326,54 @@ class SommelierWineChatbot(WineChatbot):
 
         if clean_msg.casefold() in self._NEGATIVE_ACKNOWLEDGMENTS:
             response_text = (
-                "No problem. If you'd like another suggestion later, just tell me what you're having."
+                "Of course. Thanks for stopping by; I'm here whenever you'd like help choosing a wine."
                 if lang == "en"
-                else "Claro, no hay problema. Si después quieres otra sugerencia, cuéntame qué vas a comer."
+                else "Claro, gracias por visitarme. Cuando quieras elegir un vino, aquí estaré para ayudarte."
             )
             self._history.append(ChatTurn(role="assistant", message=response_text))
             return response_text
 
+        detected_intent = self._detect_intent(clean_msg)
+        if detected_intent:
+            self._context.intent = detected_intent
+        elif self._context.intent is None:
+            self._context.intent = self._detect_intent(
+                self._context.last_dinner_query or ""
+            )
+
+        if self._context.awaiting == "intent" and self._context.intent is None:
+            response_text = self._dialogue.intent_question(lang)
+            self._history.append(ChatTurn(role="assistant", message=response_text))
+            return response_text
+
+        if self._context.intent == "meal" and not self._has_meal_details(clean_msg):
+            self._context.awaiting = "meal"
+            response_text = self._dialogue.meal_question(lang, self._daypart())
+            self._history.append(ChatTurn(role="assistant", message=response_text))
+            return response_text
+
+        if self._context.intent == "tasting" and not self._has_tasting_style(clean_msg):
+            self._context.awaiting = "tasting"
+            response_text = self._dialogue.tasting_question(lang)
+            self._history.append(ChatTurn(role="assistant", message=response_text))
+            return response_text
+
+        if self._context.awaiting in {"intent", "meal", "tasting"}:
+            prefix = f"{self._dialogue.acknowledgment(lang)} "
+        else:
+            prefix = ""
+
         previous_query = self._context.last_dinner_query
-        if previous_query and self._REFINEMENT_MARKERS.search(clean_msg):
+        if (
+            previous_query
+            and self._REFINEMENT_MARKERS.search(clean_msg)
+            and not self._has_meal_details(clean_msg)
+        ):
             search_text = f"{previous_query} {clean_msg}"
         else:
             search_text = clean_msg
         self._context.last_dinner_query = search_text
+        self._context.awaiting = None
         search_query = self._normalizer.normalize_for_search(search_text, lang)
 
         try:
@@ -300,7 +394,7 @@ class SommelierWineChatbot(WineChatbot):
             self._history.append(ChatTurn(role="assistant", message=response_text))
             return response_text
 
-        response_text = self._format_recommendations(clean_msg, recommendations, lang)
+        response_text = prefix + self._format_recommendations(clean_msg, recommendations, lang)
         self._history.append(
             ChatTurn(
                 role="assistant",

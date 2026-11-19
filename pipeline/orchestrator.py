@@ -1,23 +1,15 @@
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Dict, List
 
 import pandas as pd
 from scipy.sparse import spmatrix
 
 from data_layer import (
-    CsvWineDataLoader,
     DataCleaner,
     DataLoader,
     StepTimer,
-    WineCleaningConfig,
-    WineDataCleaner,
 )
-from model_layer import (
-    UnsupervisedClusterer,
-    WineClusteringConfig,
-    WineMiniBatchKMeansClusterer,
-)
+from model_layer import UnsupervisedClusterer
 from nlp_layer import TextVectorizer, TfidfWineVectorizer
 from recommendation_layer import (
     ContentClusterWineRecommender,
@@ -121,6 +113,15 @@ class WineChatbotPipeline:
             raise RuntimeError("Primero debe ejecutarse run() para iniciar el chatbot.")
         return self._chatbot.reply(user_message)
 
+    def create_chatbot(self) -> SommelierWineChatbot:
+        """Crea una conversación aislada que comparte el recomendador ya entrenado."""
+        if self._recommender is None:
+            raise RuntimeError("Primero debe ejecutarse run() para preparar el recomendador.")
+        return SommelierWineChatbot(
+            recommender=self._recommender,
+            config=self._chatbot_config,
+        )
+
     def is_goodbye_message(self, user_message: str) -> bool:
         """Indica si el mensaje debe terminar el bucle de conversación."""
         if self._chatbot is None:
@@ -148,20 +149,9 @@ class WineChatbotPipeline:
 
 
 def main() -> None:
-    dataset_path = Path(__file__).resolve().parents[1] / "dataset" / "wines.csv"
-    cleaning_config = WineCleaningConfig()
-    clustering_config = WineClusteringConfig()
+    from .factory import create_pipeline
 
-    pipeline = WineChatbotPipeline(
-        data_loader=CsvWineDataLoader(
-            filepath=dataset_path,
-            columns=cleaning_config.active_columns,
-        ),
-        data_cleaner=WineDataCleaner(config=cleaning_config),
-        text_vectorizer=TfidfWineVectorizer(config=clustering_config),
-        clusterer=WineMiniBatchKMeansClusterer(config=clustering_config),
-        cluster_col_name=clustering_config.cluster_col_name,
-    )
+    pipeline = create_pipeline()
     result = pipeline.run()
 
     print("\n--- Métricas de clustering ---")
@@ -169,7 +159,7 @@ def main() -> None:
     print("\n--- Términos principales por clúster ---")
     for cluster_id, terms in result.cluster_terms.items():
         count = int(
-            (result.dataframe[clustering_config.cluster_col_name] == cluster_id).sum()
+            (result.dataframe["cluster_id"] == cluster_id).sum()
         )
         print(f"Clúster {cluster_id} ({count} vinos): {', '.join(terms)}")
 

@@ -71,6 +71,68 @@ class CustomerDialogue:
             "Nothing stood out for that search. We could try another ingredient, style, or budget.",
         ),
     }
+    _INTENT_QUESTIONS: Dict[str, Tuple[str, ...]] = {
+        "es": (
+            "¿Buscas un vino para degustar por sí solo o para acompañar tu comida?",
+            "¿Te gustaría elegir un vino para disfrutarlo solo, o buscas algo para acompañar tus alimentos?",
+            "Para orientarte mejor, ¿quieres un vino para degustar o para maridar con tu comida?",
+        ),
+        "en": (
+            "Are you looking for a wine to sip and enjoy on its own, or to pair with a meal?",
+            "Would you like a wine for tasting on its own, or something to go with your food?",
+            "To help you best, are you choosing a wine to enjoy by itself or with a meal?",
+        ),
+    }
+    _MEAL_QUESTIONS: Dict[str, Dict[str, Tuple[str, ...]]] = {
+        "es": {
+            "meal": (
+                "¡Con gusto! ¿Qué vas a comer? Cuéntame el platillo y, si quieres, también el presupuesto.",
+                "Perfecto, busquemos un buen maridaje. ¿Qué comerás y hay algún presupuesto que quieras respetar?",
+                "¡Claro! ¿Qué platillo tienes pensado para hoy? Con eso puedo sugerirte un vino que lo acompañe.",
+            ),
+            "dinner": (
+                "¡Con gusto! ¿Qué vas a cenar? Cuéntame el platillo y, si quieres, también el presupuesto.",
+                "Perfecto, busquemos un buen maridaje para esta noche. ¿Qué cenarás?",
+                "¡Claro! ¿Qué tienes pensado para la cena? Así puedo recomendarte algo que combine bien.",
+            ),
+        },
+        "en": {
+            "meal": (
+                "I'd be happy to help. What are you having to eat? You can also share a budget if you have one.",
+                "Lovely. What dish are you planning to enjoy, and is there a budget you'd like me to keep in mind?",
+                "Of course! Tell me what you're eating, and I'll find a wine that pairs nicely.",
+            ),
+            "dinner": (
+                "I'd be happy to help. What are you having for dinner? You can also share a budget if you have one.",
+                "Let's find a lovely pairing for tonight. What are you planning for dinner?",
+                "Of course! What are you having for dinner? I'll suggest something that pairs well.",
+            ),
+        },
+    }
+    _TASTING_QUESTIONS: Dict[str, Tuple[str, ...]] = {
+        "es": (
+            "¡Qué buena idea! ¿Qué estilo o tipo de vino disfrutas: tinto, blanco, rosado, dulce, seco o con más cuerpo?",
+            "Para degustarlo, ¿qué perfil te gusta más? Por ejemplo, un tinto robusto, un blanco fresco o algo dulce.",
+            "¿Tienes alguna variedad o estilo favorito para degustar? También puedo sugerirte algo nuevo.",
+        ),
+        "en": (
+            "Sounds lovely! What style do you enjoy: red, white, rosé, sweet, dry, or full-bodied?",
+            "For a tasting, what kind of profile do you prefer? For example, a bold red, a crisp white, or something sweet.",
+            "Do you have a favorite grape or style to sip, or would you like to explore something new?",
+        ),
+    }
+    _ACKNOWLEDGMENTS: Dict[str, Tuple[str, ...]] = {
+        "es": (
+            "Entendido.",
+            "Perfecto, gracias por contármelo.",
+            "¡Muy bien, ya tengo una idea!",
+        ),
+        "en": (
+            "Got it.",
+            "Perfect, thanks for sharing that.",
+            "Lovely, I have a good starting point.",
+        ),
+    }
 
     def __init__(self) -> None:
         self._positions: DefaultDict[str, int] = defaultdict(int)
@@ -83,6 +145,21 @@ class CustomerDialogue:
     def greeting(self, bot_name: str, language: str) -> str:
         template = self._next("greeting", self._GREETINGS[language])
         return template.format(bot_name=bot_name)
+
+    def intent_question(self, language: str) -> str:
+        return self._next("intent_question", self._INTENT_QUESTIONS[language])
+
+    def meal_question(self, language: str, daypart: str) -> str:
+        return self._next(
+            f"meal_question_{daypart}",
+            self._MEAL_QUESTIONS[language][daypart],
+        )
+
+    def tasting_question(self, language: str) -> str:
+        return self._next("tasting_question", self._TASTING_QUESTIONS[language])
+
+    def acknowledgment(self, language: str) -> str:
+        return self._next("acknowledgment", self._ACKNOWLEDGMENTS[language])
 
     def farewell(self, bot_name: str, language: str) -> str:
         template = self._next("farewell", self._FAREWELLS[language])
