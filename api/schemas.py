@@ -1,0 +1,20 @@
+from pydantic import BaseModel, Field
+
+
+class ChatMessageRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class ChatSessionResponse(BaseModel):
+    session_id: str
+
+
+class ChatMessageResponse(BaseModel):
+    message: str
+    closed: bool
+    currency: str
+
+
+class HealthResponse(BaseModel):
+    status: str
+    pipeline_ready: bool
