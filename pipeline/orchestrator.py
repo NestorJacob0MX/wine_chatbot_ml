@@ -24,6 +24,7 @@ from recommendation_layer import (
     RecommendationConfig,
     WineRecommendation,
 )
+from chatbot_layer import ChatTurn, ChatbotConfig, SommelierWineChatbot
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,7 @@ class WineChatbotPipeline:
         clusterer: UnsupervisedClusterer,
         cluster_col_name: str = "cluster_id",
         recommendation_config: RecommendationConfig | None = None,
+        chatbot_config: ChatbotConfig | None = None,
     ) -> None:
         self._data_loader = data_loader
         self._data_cleaner = data_cleaner
@@ -56,7 +58,9 @@ class WineChatbotPipeline:
         self._recommendation_config = recommendation_config or RecommendationConfig(
             cluster_col=cluster_col_name
         )
+        self._chatbot_config = chatbot_config
         self._recommender: ContentClusterWineRecommender | None = None
+        self._chatbot: SommelierWineChatbot | None = None
 
     def run(self) -> WinePipelineResult:
         with StepTimer("Capa de datos - Carga y limpieza"):
@@ -84,6 +88,10 @@ class WineChatbotPipeline:
             cluster_terms=cluster_terms,
             config=self._recommendation_config,
         )
+        self._chatbot = SommelierWineChatbot(
+            recommender=self._recommender,
+            config=self._chatbot_config,
+        )
 
         return WinePipelineResult(
             dataframe=result_df,
@@ -106,6 +114,25 @@ class WineChatbotPipeline:
             top_k=top_k,
             max_price=max_price,
         )
+
+    def reply(self, user_message: str) -> str:
+        """Procesa un mensaje conversacional después de inicializar el pipeline."""
+        if self._chatbot is None:
+            raise RuntimeError("Primero debe ejecutarse run() para iniciar el chatbot.")
+        return self._chatbot.reply(user_message)
+
+    def reset_conversation(self) -> None:
+        """Reinicia el historial y contexto conversacional actual."""
+        if self._chatbot is None:
+            raise RuntimeError("Primero debe ejecutarse run() para iniciar el chatbot.")
+        self._chatbot.reset_conversation()
+
+    @property
+    def conversation_history(self) -> List[ChatTurn]:
+        """Retorna el historial de la conversación actual."""
+        if self._chatbot is None:
+            raise RuntimeError("Primero debe ejecutarse run() para iniciar el chatbot.")
+        return self._chatbot.history
 
 
 def main() -> None:
@@ -134,24 +161,15 @@ def main() -> None:
         )
         print(f"Clúster {cluster_id} ({count} vinos): {', '.join(terms)}")
 
-    consulta = input("\nDescribe la cena o preferencia de vino: ").strip()
-    presupuesto_input = input("Presupuesto máximo (ej. 50; Enter para omitir): ").strip()
-    presupuesto = float(presupuesto_input) if presupuesto_input else None
-
-    recomendaciones = pipeline.recommend(
-        query_text=consulta,
-        top_k=3,
-        max_price=presupuesto,
-    )
-
-    print("\n--- Recomendaciones ---")
-    for vino in recomendaciones:
-        print(
-            f"\n{vino.title} — {vino.variety} ({vino.winery})"
-            f"\nPrecio: ${vino.price:.2f} | Puntaje: {vino.points:.0f}"
-            f"\nSimilitud: {vino.similarity_score:.3f}"
-            f"\n{vino.description}"
-        )
+    print("\nEscribe tu cena o preferencia (o 'salir' para terminar):")
+    while True:
+        user_message = input("\nTú: ").strip()
+        if not user_message:
+            continue
+        if user_message.lower() in {"salir", "exit", "quit"}:
+            print("SommelierAI: ¡Salud y provecho en tu cena!")
+            break
+        print(f"\nSommelierAI:\n{pipeline.reply(user_message)}")
 
 
 if __name__ == "__main__":
