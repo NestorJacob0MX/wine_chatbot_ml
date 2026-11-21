@@ -1,6 +1,7 @@
 import logging
 import re
 from datetime import datetime
+import unicodedata
 from typing import List, Optional
 
 from recommendation_layer import WineRecommendation, WineRecommender
@@ -73,6 +74,39 @@ class SommelierWineChatbot(WineChatbot):
         r"hamburguesa|burger|costillas|ribs|pavo|turkey|verduras|vegetables)\b",
         re.IGNORECASE,
     )
+    _MEAL_CUE_PATTERN = re.compile(
+        r"\b(?:voy a (?:comer|cenar)|comer[eé]|cenar[eé]|"
+        r"i(?:'m| am) having|i(?:'m| am) eating|having|eating)\s+"
+        r"(.+?)(?:[,!?;.]|$)",
+        re.IGNORECASE,
+    )
+    _MEAL_REQUEST_TAIL = re.compile(
+        r"\b(?:qué vino|que vino|me recomiendas|recomiéndame|"
+        r"recommend(?: me)?|what wine|which wine)\b.*$",
+        re.IGNORECASE,
+    )
+    _FOOD_PAIRING_TERMS = {
+        "arepas": "corn savory cheese medium-bodied red wine",
+        "bánh_mì": "pork herbs spicy aromatic white wine light red",
+        "burger": "grilled beef juicy full-bodied red wine tannins",
+        "churros": "cinnamon sweet dessert wine",
+        "crepes": "light fruit sparkling wine",
+        "currywurst": "spicy sausage fruity red wine rose",
+        "empanadas": "savory meat red wine",
+        "falafel": "herbs spices crisp white wine rose",
+        "fish_and_chips": "fried fish crisp white wine sparkling",
+        "gelato": "sweet dessert wine sparkling",
+        "hot_dog": "sausage light red wine rose",
+        "kebab_(shish_kebab)": "grilled meat spices syrah red wine",
+        "pad_thai": "spicy lime aromatic white wine riesling",
+        "pani_puri": "spicy tangy sparkling wine riesling",
+        "pizza_slice": "tomato acidity red wine sangiovese",
+        "poutine": "savory rich full-bodied red wine",
+        "pretzel": "salty sparkling wine white wine",
+        "samosas": "spicy aromatic white wine off-dry",
+        "shawarma": "spiced grilled meat syrah red wine",
+        "tacos": "spicy meat salsa red wine rose",
+    }
     _TASTING_STYLE_MARKERS = re.compile(
         r"\b(tinto|blanco|rosado|rosé|espumoso|champagne|dulce|seco|robusto|"
         r"robusta|ligero|ligera|suave|frutal|cabernet|merlot|pinot|syrah|"
@@ -202,7 +236,20 @@ class SommelierWineChatbot(WineChatbot):
         return None
 
     def _has_meal_details(self, text: str) -> bool:
-        return bool(self._MEAL_DETAIL_MARKERS.search(text))
+        if self._MEAL_DETAIL_MARKERS.search(text):
+            return True
+        normalized = text.casefold().replace(" ", "_")
+        return any(label.casefold() in normalized for label in self._FOOD_PAIRING_TERMS)
+
+    def _extract_meal_description(self, text: str) -> Optional[str]:
+        cue_match = self._MEAL_CUE_PATTERN.search(text)
+        if cue_match:
+            description = self._MEAL_REQUEST_TAIL.sub("", cue_match.group(1)).strip()
+            if description:
+                return description
+
+        food_match = self._MEAL_DETAIL_MARKERS.search(text)
+        return food_match.group(0) if food_match else None
 
     def _has_tasting_style(self, text: str) -> bool:
         return bool(self._TASTING_STYLE_MARKERS.search(text))
@@ -212,6 +259,29 @@ class SommelierWineChatbot(WineChatbot):
             price_mxn = price_usd * 20
             return f"MXN ${price_mxn:,.0f}"
         return f"USD ${price_usd:,.2f}"
+
+    def reply_with_food(self, food_label: str) -> str:
+        """Genera una recomendación a partir del platillo predicho en una imagen."""
+        normalized_label = unicodedata.normalize("NFC", food_label.strip())
+        normalized_label = normalized_label.casefold().replace(" ", "_")
+        if not normalized_label:
+            raise ValueError("La etiqueta del alimento no puede estar vacía.")
+        pairing_terms = self._FOOD_PAIRING_TERMS.get(normalized_label, "food wine pairing")
+        friendly_label = normalized_label.replace("_", " ").replace("(", "").replace(")", "")
+
+        self._context.intent = "meal"
+        self._context.awaiting = None
+        if self._context.language == "en":
+            message = (
+                f"I'm having {friendly_label}. Suggest a wine pairing with "
+                f"these food characteristics: {pairing_terms}."
+            )
+        else:
+            message = (
+                f"Voy a comer {friendly_label}. Busco un vino para acompañarlo; "
+                f"considera estos sabores y estilos: {pairing_terms}."
+            )
+        return self.reply(message)
 
     def _format_greeting(self, lang: str) -> str:
         return self._dialogue.greeting(self._config.bot_name, lang)
@@ -225,9 +295,17 @@ class SommelierWineChatbot(WineChatbot):
         if not recs:
             return self._dialogue.no_match(lang)
 
-        lines = [
-            f"{self._dialogue.recommendation_opening(user_query, lang)}\n"
-        ]
+        meal = (
+            self._extract_meal_description(self._context.last_dinner_query or user_query)
+            if self._context.intent == "meal"
+            else None
+        )
+        opening = (
+            self._dialogue.meal_recommendation_opening(meal, lang)
+            if meal
+            else self._dialogue.recommendation_opening(user_query, lang)
+        )
+        lines = [f"{opening}\n"]
 
         for idx, rec in enumerate(recs, start=1):
             hints = (

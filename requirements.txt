@@ -1,8 +1,12 @@
 fastapi
 numpy
 pandas
+pillow
+python-multipart
 requests
 scikit-learn
 scipy
 streamlit
+torch
+torchvision
 uvicorn[standard]

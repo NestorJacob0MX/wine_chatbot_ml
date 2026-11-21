@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+import logging
+from pathlib import Path
 from typing import Dict, List
 
 import pandas as pd
@@ -9,6 +11,7 @@ from data_layer import (
     DataLoader,
     StepTimer,
 )
+from image_layer.contracts.food_classifier import FoodClassifier, FoodPrediction
 from model_layer import UnsupervisedClusterer
 from nlp_layer import TextVectorizer, TfidfWineVectorizer
 from recommendation_layer import (
@@ -17,6 +20,8 @@ from recommendation_layer import (
     WineRecommendation,
 )
 from chatbot_layer import ChatTurn, ChatbotConfig, SommelierWineChatbot
+
+logger = logging.getLogger("WinePipeline.Orchestrator")
 
 
 @dataclass(frozen=True)
@@ -41,6 +46,7 @@ class WineChatbotPipeline:
         cluster_col_name: str = "cluster_id",
         recommendation_config: RecommendationConfig | None = None,
         chatbot_config: ChatbotConfig | None = None,
+        image_classifier_checkpoint: Path | None = None,
     ) -> None:
         self._data_loader = data_loader
         self._data_cleaner = data_cleaner
@@ -51,6 +57,8 @@ class WineChatbotPipeline:
             cluster_col=cluster_col_name
         )
         self._chatbot_config = chatbot_config
+        self._image_classifier_checkpoint = image_classifier_checkpoint
+        self._image_classifier: FoodClassifier | None = None
         self._recommender: ContentClusterWineRecommender | None = None
         self._chatbot: SommelierWineChatbot | None = None
 
@@ -84,6 +92,7 @@ class WineChatbotPipeline:
             recommender=self._recommender,
             config=self._chatbot_config,
         )
+        self._load_image_classifier()
 
         return WinePipelineResult(
             dataframe=result_df,
@@ -91,6 +100,36 @@ class WineChatbotPipeline:
             cluster_terms=cluster_terms,
             cluster_metrics=self._clusterer.metrics,
         )
+
+    def _load_image_classifier(self) -> None:
+        checkpoint = self._image_classifier_checkpoint
+        if checkpoint is None:
+            return
+        if not checkpoint.is_file():
+            logger.warning(
+                "No se encontró el checkpoint de imágenes en %s; "
+                "las recomendaciones por texto seguirán disponibles.",
+                checkpoint,
+            )
+            return
+
+        from image_layer.classifiers import ResNet50FoodClassifier
+
+        self._image_classifier = ResNet50FoodClassifier(checkpoint)
+        logger.info("Clasificador de alimentos integrado al pipeline.")
+
+    @property
+    def image_classifier_ready(self) -> bool:
+        return self._image_classifier is not None
+
+    def predict_food(self, image_bytes: bytes) -> FoodPrediction:
+        """Clasifica una imagen mediante el modelo cargado por el pipeline."""
+        if self._image_classifier is None:
+            raise RuntimeError(
+                "El clasificador de imágenes aún no está disponible. "
+                "Entrénalo y reinicia el API."
+            )
+        return self._image_classifier.predict(image_bytes)
 
     def recommend(
         self,

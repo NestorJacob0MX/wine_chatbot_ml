@@ -20,10 +20,18 @@ class ChatSession:
 class ChatService:
     """Gestiona sesiones conversacionales que comparten un pipeline ya entrenado."""
 
-    def __init__(self, pipeline: WineChatbotPipeline) -> None:
+    def __init__(
+        self,
+        pipeline: WineChatbotPipeline,
+    ) -> None:
         self._pipeline = pipeline
+        self._image_classifier_lock = RLock()
         self._sessions: Dict[str, ChatSession] = {}
         self._sessions_lock = RLock()
+
+    @property
+    def image_classifier_ready(self) -> bool:
+        return self._pipeline.image_classifier_ready
 
     def create_session(self) -> str:
         session_id = str(uuid4())
@@ -58,3 +66,39 @@ class ChatService:
     def close_session(self, session_id: str) -> bool:
         with self._sessions_lock:
             return self._sessions.pop(session_id, None) is not None
+
+    def analyze_image(
+        self,
+        session_id: str,
+        image_bytes: bytes,
+    ) -> tuple[str, str, float, bool, str]:
+        if not self.image_classifier_ready:
+            raise RuntimeError(
+                "El clasificador de imágenes aún no está entrenado. "
+                "Ejecuta `python -m image_layer.training.train_food_classifier` "
+                "y reinicia el API."
+            )
+        with self._sessions_lock:
+            session = self._sessions.get(session_id)
+        if session is None:
+            raise KeyError("No existe la sesión solicitada.")
+
+        with session.lock:
+            if session.closed:
+                raise RuntimeError("La conversación ya terminó. Inicia una nueva sesión.")
+            with self._image_classifier_lock:
+                prediction = self._pipeline.predict_food(image_bytes)
+            response = session.chatbot.reply_with_food(prediction.label)
+            language = session.chatbot.context.language
+            currency = (
+                "MXN (tipo de cambio fijo: 1 USD = 20 MXN)"
+                if language == "es"
+                else "USD"
+            )
+            return (
+                response,
+                prediction.label,
+                prediction.confidence,
+                session.closed,
+                currency,
+            )

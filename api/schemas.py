@@ -15,6 +15,15 @@ class ChatMessageResponse(BaseModel):
     currency: str
 
 
+class ImageMessageResponse(BaseModel):
+    message: str
+    food_label: str
+    confidence: float
+    closed: bool
+    currency: str
+
+
 class HealthResponse(BaseModel):
     status: str
     pipeline_ready: bool
+    image_classifier_ready: bool

@@ -43,6 +43,18 @@ class CustomerDialogue:
             "With **{query}** in mind, here are a few suggestions:",
         ),
     }
+    _MEAL_RECOMMENDATION_OPENINGS: Dict[str, Tuple[str, ...]] = {
+        "es": (
+            "Veo que disfrutarás **{meal}**; ¡qué rico! Estos vinos pueden acompañarlo de maravilla:",
+            "¡Qué buena elección, **{meal}**! Para ese platillo, te recomiendo estas opciones:",
+            "Me encanta la idea de **{meal}**. Busquemos un vino que realce sus sabores:",
+        ),
+        "en": (
+            "That sounds delicious—**{meal}**! Here are a few wines that could make a lovely pairing:",
+            "I see you're having **{meal}**—that sounds lovely! These wines could pair beautifully:",
+            "Great choice with **{meal}**! Here are a few pairings to consider:",
+        ),
+    }
     _RECOMMENDATION_CLOSINGS: Dict[str, Tuple[str, ...]] = {
         "es": (
             "Si me cuentas qué estilo prefieres, puedo afinar la selección.",
@@ -171,6 +183,13 @@ class CustomerDialogue:
             self._RECOMMENDATION_OPENINGS[language],
         )
         return template.format(query=query)
+
+    def meal_recommendation_opening(self, meal: str, language: str) -> str:
+        template = self._next(
+            "meal_recommendation_opening",
+            self._MEAL_RECOMMENDATION_OPENINGS[language],
+        )
+        return template.format(meal=meal)
 
     def recommendation_closing(self, language: str) -> str:
         return self._next(
